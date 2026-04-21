@@ -1,0 +1,56 @@
+name: "🔔 Afternoon Check — Mon-Fri 3:00 PM IST"
+
+on:
+  schedule:
+    # Mon-Fri 15:00 IST = 09:30 UTC
+    - cron: "30 9 * * 1-5"
+  workflow_dispatch:
+
+concurrency:
+  group: nse-scanner
+  cancel-in-progress: false
+
+jobs:
+  afternoon-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('momentum-scanner/requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r momentum-scanner/requirements.txt
+
+      - name: Run afternoon exit / trail check
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: |
+          cd momentum-scanner
+          python run_scan.py afternoon
+
+      - name: Commit updated positions and signals
+        run: |
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "NSE Scanner Bot"
+          git pull --rebase origin ${{ github.ref_name }} || true
+          git add docs/data/ momentum-scanner/data/
+          git diff --staged --quiet || git commit -m "🔔 Afternoon check — $(TZ='Asia/Kolkata' date +'%Y-%m-%d %H:%M IST')"
+          git push origin ${{ github.ref_name }}

@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NSE Momentum Scanner</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          nse: { green: '#00b386', red: '#e84040' }
+        }
+      }
+    }
+  }
+</script>
+<style>
+  body { background: #0f1117; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; }
+  .card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; }
+  .grade-a { background: #065f46; color: #6ee7b7; border: 1px solid #059669; }
+  .grade-b { background: #78350f; color: #fcd34d; border: 1px solid #d97706; }
+  .grade-c { background: #7c2d12; color: #fdba74; border: 1px solid #ea580c; }
+  .grade-x { background: #1f2937; color: #9ca3af; border: 1px solid #374151; }
+  .regime-1 { background: #064e3b; border-color: #059669; }
+  .regime-2 { background: #451a03; border-color: #d97706; }
+  .regime-3 { background: #431407; border-color: #ea580c; }
+  .regime-4 { background: #450a0a; border-color: #dc2626; }
+  .regime-label-1 { color: #34d399; }
+  .regime-label-2 { color: #fbbf24; }
+  .regime-label-3 { color: #fb923c; }
+  .regime-label-4 { color: #f87171; }
+  .rs55-pos { color: #34d399; }
+  .rs55-neg { color: #f87171; }
+  .pulse-dot { animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .skeleton { background: linear-gradient(90deg,#1e2130 25%,#252840 50%,#1e2130 75%);
+    background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius:6px; }
+  @keyframes shimmer { 0%{background-position:200%} 100%{background-position:-200%} }
+  tr:hover td { background: #1e2235 !important; }
+  .sortable { cursor: pointer; user-select: none; }
+  .sortable:hover { color: #818cf8; }
+  .sort-asc::after  { content: ' ↑'; color: #818cf8; }
+  .sort-desc::after { content: ' ↓'; color: #818cf8; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #1a1d27; }
+  ::-webkit-scrollbar-thumb { background: #3d4166; border-radius: 3px; }
+  .badge { display:inline-flex; align-items:center; padding: 2px 10px;
+    border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing:.5px; }
+  .signal-item:not(:last-child) { border-bottom: 1px solid #2d3148; }
+  .star { color: #fbbf24; }
+</style>
+</head>
+<body class="min-h-screen p-3 md:p-6">
+
+<!-- Header -->
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+      <span class="text-indigo-400">📈</span> NSE Momentum Scanner
+    </h1>
+    <p class="text-sm text-slate-400 mt-1">RS55 · Pivot Breakout · Regime Filter · Auto-updated by GitHub Actions</p>
+  </div>
+  <div class="text-right">
+    <div id="last-updated" class="text-xs text-slate-500">Loading…</div>
+    <div id="live-dot" class="flex items-center justify-end gap-1.5 mt-1">
+      <span class="w-2 h-2 rounded-full bg-green-400 pulse-dot"></span>
+      <span class="text-xs text-green-400">Live</span>
+    </div>
+  </div>
+</div>
+
+<!-- Regime + Stats row -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+  <!-- Regime -->
+  <div id="regime-card" class="card p-5 col-span-1 md:col-span-2 border-l-4 regime-1">
+    <div class="text-xs text-slate-400 uppercase tracking-wider mb-2">Market Regime</div>
+    <div id="regime-state" class="text-3xl font-bold regime-label-1 mb-1">State 1 — Full Momentum</div>
+    <div class="flex flex-wrap gap-3 mt-3">
+      <div class="text-center">
+        <div id="regime-size" class="text-xl font-bold text-white">100%</div>
+        <div class="text-xs text-slate-400">Position Size</div>
+      </div>
+      <div class="w-px bg-slate-700"></div>
+      <div class="text-center">
+        <div id="regime-maxpos" class="text-xl font-bold text-white">10</div>
+        <div class="text-xs text-slate-400">Max Positions</div>
+      </div>
+      <div class="w-px bg-slate-700"></div>
+      <div class="text-center flex-1">
+        <div id="regime-desc" class="text-xs text-slate-300">Deploy full risk budget. All A &amp; B-grade setups.</div>
+      </div>
+    </div>
+  </div>
+  <!-- Scan Stats -->
+  <div class="card p-5">
+    <div class="text-xs text-slate-400 uppercase tracking-wider mb-3">Scan Stats</div>
+    <div class="space-y-2.5">
+      <div class="flex justify-between text-sm">
+        <span class="text-slate-400">Universe scanned</span>
+        <span id="stat-scanned" class="font-semibold text-white">—</span>
+      </div>
+      <div class="flex justify-between text-sm">
+        <span class="text-slate-400">Passed gates</span>
+        <span id="stat-eligible" class="font-semibold text-green-400">—</span>
+      </div>
+      <div class="flex justify-between text-sm">
+        <span class="text-slate-400">On watchlist</span>
+        <span id="stat-watchlist" class="font-semibold text-indigo-400">—</span>
+      </div>
+      <div class="flex justify-between text-sm">
+        <span class="text-slate-400">Results blackout</span>
+        <span id="stat-blackout" class="font-semibold text-amber-400">—</span>
+      </div>
+      <div class="flex justify-between text-sm">
+        <span class="text-slate-400">Last full scan</span>
+        <span id="stat-scan-time" class="font-semibold text-slate-300">—</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Sector RS55 Leaders -->
+<div class="card p-4 mb-6">
+  <div class="text-xs text-slate-400 uppercase tracking-wider mb-3">Sector RS55 Leaders</div>
+  <div id="sector-leaders" class="flex flex-wrap gap-2">
+    <div class="skeleton h-7 w-24"></div>
+    <div class="skeleton h-7 w-20"></div>
+    <div class="skeleton h-7 w-28"></div>
+  </div>
+</div>
+
+<!-- Watchlist Table -->
+<div class="card mb-6">
+  <div class="flex items-center justify-between px-5 pt-5 pb-3">
+    <h2 class="text-base font-semibold text-white">Top Momentum Stocks <span id="watchlist-count" class="text-sm text-slate-500 font-normal ml-1"></span></h2>
+    <div class="flex gap-2">
+      <select id="grade-filter" onchange="filterTable()" class="text-xs bg-slate-800 border border-slate-600 text-slate-300 rounded px-2 py-1">
+        <option value="">All Grades</option>
+        <option value="A">Grade A</option>
+        <option value="B">Grade B</option>
+        <option value="C">Grade C</option>
+      </select>
+      <select id="sector-filter" onchange="filterTable()" class="text-xs bg-slate-800 border border-slate-600 text-slate-300 rounded px-2 py-1">
+        <option value="">All Sectors</option>
+      </select>
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-xs text-slate-400 border-b border-slate-700">
+          <th class="px-4 py-2 text-left font-medium">#</th>
+          <th class="px-4 py-2 text-left font-medium sortable" onclick="sortTable('grade')">Grade</th>
+          <th class="px-4 py-2 text-left font-medium sortable" onclick="sortTable('symbol')">Symbol</th>
+          <th class="px-4 py-2 text-right font-medium sortable" onclick="sortTable('score')">Score</th>
+          <th class="px-4 py-2 text-right font-medium sortable" onclick="sortTable('rs55_pct')">RS55</th>
+          <th class="px-4 py-2 text-right font-medium sortable" onclick="sortTable('mom_percentile')">Mom%</th>
+          <th class="px-4 py-2 text-left font-medium">Base</th>
+          <th class="px-4 py-2 text-right font-medium sortable" onclick="sortTable('rsi')">RSI</th>
+          <th class="px-4 py-2 text-left font-medium">Sector</th>
+          <th class="px-4 py-2 text-left font-medium">Signals</th>
+        </tr>
+      </thead>
+      <tbody id="watchlist-body">
+        <tr><td colspan="10" class="px-4 py-8 text-center text-slate-500">
+          <div class="skeleton h-5 w-full mb-2"></div>
+          <div class="skeleton h-5 w-full mb-2"></div>
+          <div class="skeleton h-5 w-4/5"></div>
+        </td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Open Positions -->
+<div class="card mb-6">
+  <div class="px-5 pt-5 pb-3">
+    <h2 class="text-base font-semibold text-white">Open Positions <span id="positions-count" class="text-sm text-slate-500 font-normal ml-1"></span></h2>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-xs text-slate-400 border-b border-slate-700">
+          <th class="px-4 py-2 text-left font-medium">Symbol</th>
+          <th class="px-4 py-2 text-right font-medium">Entry</th>
+          <th class="px-4 py-2 text-right font-medium">Stop Loss</th>
+          <th class="px-4 py-2 text-right font-medium">Shares</th>
+          <th class="px-4 py-2 text-left font-medium">Phase</th>
+          <th class="px-4 py-2 text-left font-medium">Grade</th>
+          <th class="px-4 py-2 text-left font-medium">Type</th>
+          <th class="px-4 py-2 text-left font-medium">Entry Date</th>
+          <th class="px-4 py-2 text-left font-medium">Regime@Entry</th>
+        </tr>
+      </thead>
+      <tbody id="positions-body">
+        <tr><td colspan="9" class="px-4 py-6 text-center text-slate-500 text-sm">No open positions</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Recent Signals -->
+<div class="card mb-6">
+  <div class="px-5 pt-5 pb-3 flex items-center justify-between">
+    <h2 class="text-base font-semibold text-white">Recent Alerts</h2>
+    <span class="text-xs text-slate-500">Last 20</span>
+  </div>
+  <div id="signals-list" class="px-4 pb-4">
+    <div class="text-center text-slate-500 text-sm py-4">No recent alerts</div>
+  </div>
+</div>
+
+<!-- Score Legend -->
+<div class="card p-4 mb-6">
+  <div class="text-xs text-slate-400 uppercase tracking-wider mb-3">Score Components (100 pts total)</div>
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+    <div class="text-center p-2 bg-slate-800 rounded">
+      <div class="text-indigo-400 font-bold text-base">30</div>
+      <div class="text-slate-300 mt-1">RS55</div>
+      <div class="text-slate-500">Relative Strength</div>
+    </div>
+    <div class="text-center p-2 bg-slate-800 rounded">
+      <div class="text-blue-400 font-bold text-base">25</div>
+      <div class="text-slate-300 mt-1">Momentum</div>
+      <div class="text-slate-500">12-1M cross-section</div>
+    </div>
+    <div class="text-center p-2 bg-slate-800 rounded">
+      <div class="text-green-400 font-bold text-base">20</div>
+      <div class="text-slate-300 mt-1">Base Quality</div>
+      <div class="text-slate-500">VCP tightness</div>
+    </div>
+    <div class="text-center p-2 bg-slate-800 rounded">
+      <div class="text-amber-400 font-bold text-base">15</div>
+      <div class="text-slate-300 mt-1">Volume Trend</div>
+      <div class="text-slate-500">10-day slope</div>
+    </div>
+    <div class="text-center p-2 bg-slate-800 rounded">
+      <div class="text-rose-400 font-bold text-base">10</div>
+      <div class="text-slate-300 mt-1">RSI Health</div>
+      <div class="text-slate-500">Level + slope</div>
+    </div>
+  </div>
+</div>
+
+<div class="text-center text-xs text-slate-600 py-4">
+  NSE Momentum Scanner · Powered by GitHub Actions · Data updates automatically every scan run
+  <br>Verify RS55 values on <a href="https://stockedge.com" target="_blank" class="text-indigo-400 hover:underline">StockEdge</a> · ±1% tolerance
+</div>
+
+<script>
+// ── Data URLs (relative — works on GitHub Pages) ──────────────────────────────
+const DATA = {
+  watchlist:  'data/watchlist.json',
+  regime:     'data/regime.json',
+  positions:  'data/open_positions.json',
+  signals:    'data/signals.json',
+  meta:       'data/scan_meta.json',
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let allStocks = [];
+let sortCol = 'score';
+let sortDir = 'desc';
+
+// ── Fetch helper ─────────────────────────────────────────────────────────────
+async function fetchJson(url) {
+  try {
+    const r = await fetch(url + '?v=' + Date.now());
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
+// ── Formatters ────────────────────────────────────────────────────────────────
+const fmtRs  = v => (v >= 0 ? `<span class="rs55-pos">+${v.toFixed(1)}%</span>` : `<span class="rs55-neg">${v.toFixed(1)}%</span>`);
+const fmtNum = v => typeof v === 'number' ? v.toFixed(0) : '—';
+const fmtPct = v => typeof v === 'number' ? v.toFixed(0) + '%' : '—';
+const fmtRs55Pct = v => typeof v === 'number' ? fmtRs(v) : '—';
+
+function gradeTag(g) {
+  const cls = { A:'grade-a', B:'grade-b', C:'grade-c' }[g] || 'grade-x';
+  const stars = { A:'★★★', B:'★★', C:'★' }[g] || '';
+  return `<span class="badge ${cls}">${g} ${stars}</span>`;
+}
+
+function phaseTag(p) {
+  if (p == 1) return `<span class="text-xs text-blue-400">Phase 1 — Protect</span>`;
+  if (p == 2) return `<span class="text-xs text-green-400">Phase 2 — Risk-free ✓</span>`;
+  if (p == 3) return `<span class="text-xs text-amber-400">Phase 3 — Trailing</span>`;
+  return `<span class="text-xs text-slate-400">Phase ${p}</span>`;
+}
+
+function signalTag(type) {
+  const map = {
+    BREAKOUT: 'bg-green-900 text-green-300',
+    PARTIAL_EXIT: 'bg-blue-900 text-blue-300',
+    STOP_LOSS: 'bg-red-900 text-red-300',
+    TRAIL_EXIT: 'bg-purple-900 text-purple-300',
+    RS55_NEGATIVE: 'bg-amber-900 text-amber-300',
+    VOLUME_EXHAUSTION: 'bg-orange-900 text-orange-300',
+    KEY_REVERSAL: 'bg-rose-900 text-rose-300',
+    STALE_SWING: 'bg-gray-700 text-gray-300',
+    WEEKLY: 'bg-indigo-900 text-indigo-300',
+  };
+  const cls = map[type] || 'bg-slate-700 text-slate-300';
+  return `<span class="badge ${cls}">${type.replace(/_/g,' ')}</span>`;
+}
+
+function rsSignals(stock) {
+  const flags = [];
+  if (stock.rs55_just_turned)  flags.push(`<span class="text-xs text-emerald-400" title="RS55 just crossed above zero">★ New+</span>`);
+  if (stock.rs55_at_new_high)  flags.push(`<span class="text-xs text-cyan-400" title="RS55 at new high">↑ High</span>`);
+  if (stock.rs55_declining)    flags.push(`<span class="text-xs text-rose-400" title="RS55 declining">↓ Warn</span>`);
+  const rise = parseInt(stock.rs55_rising_days || 0);
+  if (rise >= 2 && !stock.rs55_declining) flags.push(`<span class="text-xs text-green-400">▲${rise}d</span>`);
+  return flags.join(' ');
+}
+
+// ── Regime ────────────────────────────────────────────────────────────────────
+function renderRegime(r) {
+  if (!r) return;
+  const n = r.state || 1;
+  const card = document.getElementById('regime-card');
+  card.className = `card p-5 col-span-1 md:col-span-2 border-l-4 regime-${n}`;
+  document.getElementById('regime-state').className = `text-3xl font-bold regime-label-${n} mb-1`;
+  document.getElementById('regime-state').textContent = `State ${n} — ${r.label}`;
+  document.getElementById('regime-size').textContent = (r.size_multiplier * 100).toFixed(0) + '%';
+  document.getElementById('regime-maxpos').textContent = r.max_positions;
+  document.getElementById('regime-desc').textContent = r.description || '';
+}
+
+// ── Scan meta ─────────────────────────────────────────────────────────────────
+function renderMeta(m) {
+  if (!m) return;
+  document.getElementById('stat-scanned').textContent  = m.total_scanned  || '—';
+  document.getElementById('stat-eligible').textContent = m.total_eligible || '—';
+  document.getElementById('stat-watchlist').textContent = m.watchlist_count || '—';
+  document.getElementById('stat-blackout').textContent  = m.blackout_count  || '0';
+  document.getElementById('stat-scan-time').textContent = m.scan_date ? fmtDate(m.scan_date) : '—';
+
+  if (m.sector_leaders && m.sector_leaders.length) {
+    document.getElementById('sector-leaders').innerHTML = m.sector_leaders.map(s =>
+      `<span class="badge bg-indigo-900 text-indigo-300 border border-indigo-700">${s}</span>`
+    ).join('');
+  } else {
+    document.getElementById('sector-leaders').innerHTML = `<span class="text-xs text-slate-500">Sector data updates on Sunday scan</span>`;
+  }
+}
+
+function fmtDate(s) {
+  try {
+    const d = new Date(s);
+    return d.toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+  } catch { return s; }
+}
+
+// ── Watchlist ─────────────────────────────────────────────────────────────────
+function populateSectorFilter(stocks) {
+  const sectors = [...new Set(stocks.map(s => s.sector).filter(Boolean))].sort();
+  const sel = document.getElementById('sector-filter');
+  sectors.forEach(sec => {
+    const opt = document.createElement('option');
+    opt.value = sec; opt.textContent = sec;
+    sel.appendChild(opt);
+  });
+}
+
+function sortTable(col) {
+  if (sortCol === col) { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; }
+  else { sortCol = col; sortDir = col === 'symbol' ? 'asc' : 'desc'; }
+  renderWatchlist(allStocks);
+  document.querySelectorAll('.sortable').forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+  });
+  // Mark current sort header — match by onclick attribute
+  document.querySelectorAll(`.sortable[onclick="sortTable('${col}')"]`).forEach(th => {
+    th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+  });
+}
+
+function filterTable() {
+  renderWatchlist(allStocks);
+}
+
+function renderWatchlist(stocks) {
+  const gradeF  = document.getElementById('grade-filter').value;
+  const sectorF = document.getElementById('sector-filter').value;
+
+  let filtered = stocks.filter(s => {
+    if (gradeF  && s.grade  !== gradeF)  return false;
+    if (sectorF && s.sector !== sectorF) return false;
+    return true;
+  });
+
+  filtered.sort((a, b) => {
+    let av = a[sortCol], bv = b[sortCol];
+    if (typeof av === 'string') { av = av.toLowerCase(); bv = (bv||'').toLowerCase(); }
+    if (av == null) return 1; if (bv == null) return -1;
+    return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+  });
+
+  document.getElementById('watchlist-count').textContent = `(${filtered.length})`;
+
+  if (!filtered.length) {
+    document.getElementById('watchlist-body').innerHTML =
+      `<tr><td colspan="10" class="px-4 py-8 text-center text-slate-500">No stocks match current filters</td></tr>`;
+    return;
+  }
+
+  document.getElementById('watchlist-body').innerHTML = filtered.map((s, i) => {
+    const rowBg = i % 2 === 0 ? '' : 'background:#171a26';
+    const rs55val = typeof s.rs55_pct === 'number' ? s.rs55_pct : 0;
+    const baseStr = s.base_length
+      ? `${s.base_length}d <span class="text-xs ${s.base_range_pct < 0.06 ? 'text-green-400' : s.base_range_pct < 0.12 ? 'text-amber-400' : 'text-rose-400'}">${((s.base_range_pct||0)*100).toFixed(1)}%</span>`
+      : '—';
+    const momPct = typeof s.mom_percentile === 'number' ? s.mom_percentile.toFixed(0) + '%' : '—';
+    const sectorStr = s.sector || 'Other';
+    return `<tr style="${rowBg}" class="border-b border-slate-800">
+      <td class="px-4 py-2.5 text-slate-500 text-xs">${i+1}</td>
+      <td class="px-4 py-2.5">${gradeTag(s.grade)}</td>
+      <td class="px-4 py-2.5 font-semibold text-white">${s.symbol}</td>
+      <td class="px-4 py-2.5 text-right">
+        <span class="font-bold text-white">${fmtNum(s.score)}</span><span class="text-slate-500 text-xs">/100</span>
+      </td>
+      <td class="px-4 py-2.5 text-right font-mono">${fmtRs55Pct(rs55val)}</td>
+      <td class="px-4 py-2.5 text-right text-slate-300">${momPct}</td>
+      <td class="px-4 py-2.5 text-slate-300 text-xs">${baseStr}</td>
+      <td class="px-4 py-2.5 text-right text-slate-300">${typeof s.rsi === 'number' ? s.rsi.toFixed(0) : '—'}</td>
+      <td class="px-4 py-2.5 text-xs text-slate-400">${sectorStr}</td>
+      <td class="px-4 py-2.5 text-xs">${rsSignals(s)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Positions ─────────────────────────────────────────────────────────────────
+function renderPositions(posObj) {
+  const positions = posObj ? Object.entries(posObj) : [];
+  document.getElementById('positions-count').textContent = positions.length ? `(${positions.length})` : '';
+  if (!positions.length) {
+    document.getElementById('positions-body').innerHTML =
+      `<tr><td colspan="9" class="px-4 py-6 text-center text-slate-500 text-sm">No open positions — cash deployed: Rs ${(1000000).toLocaleString('en-IN')}</td></tr>`;
+    return;
+  }
+  document.getElementById('positions-body').innerHTML = positions.map(([sym, p]) => `
+    <tr class="border-b border-slate-800">
+      <td class="px-4 py-2.5 font-semibold text-white">${sym}</td>
+      <td class="px-4 py-2.5 text-right font-mono text-white">₹${(p.entry||0).toLocaleString('en-IN')}</td>
+      <td class="px-4 py-2.5 text-right font-mono text-rose-400">₹${(p.sl||0).toLocaleString('en-IN')}</td>
+      <td class="px-4 py-2.5 text-right text-slate-300">${p.shares || '—'}</td>
+      <td class="px-4 py-2.5">${phaseTag(p.phase)}</td>
+      <td class="px-4 py-2.5">${gradeTag(p.grade)}</td>
+      <td class="px-4 py-2.5 text-xs text-slate-400">${(p.type||'').replace(/_/g,' ')}</td>
+      <td class="px-4 py-2.5 text-xs text-slate-400">${p.entry_date || '—'}</td>
+      <td class="px-4 py-2.5 text-xs text-slate-400">State ${p.regime_at_entry || '—'}</td>
+    </tr>`).join('');
+}
+
+// ── Signals ───────────────────────────────────────────────────────────────────
+function renderSignals(signals) {
+  if (!signals || !signals.length) {
+    document.getElementById('signals-list').innerHTML =
+      `<div class="text-center text-slate-500 text-sm py-4">No recent alerts — run a scan to generate alerts</div>`;
+    return;
+  }
+  document.getElementById('signals-list').innerHTML = signals.slice(0, 20).map(s => `
+    <div class="signal-item py-3 flex items-start gap-3">
+      <div class="text-xs text-slate-500 w-28 flex-shrink-0 pt-0.5">${s.timestamp || ''}</div>
+      <div class="flex-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          ${signalTag(s.alert_type || s.type || 'SIGNAL')}
+          <span class="font-semibold text-white text-sm">${s.symbol || ''}</span>
+          ${s.grade ? gradeTag(s.grade) : ''}
+          ${s.score ? `<span class="text-xs text-slate-400">Score: ${s.score}</span>` : ''}
+        </div>
+        ${s.message ? `<div class="text-xs text-slate-400 mt-1">${s.message}</div>` : ''}
+        ${s.entry ? `<div class="text-xs text-slate-400 mt-1">Entry: ₹${s.entry} · SL: ₹${s.sl} · T1: ₹${s.target1}</div>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+// ── Last updated ──────────────────────────────────────────────────────────────
+function renderLastUpdated(meta) {
+  const el = document.getElementById('last-updated');
+  if (meta && meta.scan_timestamp) {
+    try {
+      const d = new Date(meta.scan_timestamp);
+      const diff = Math.floor((Date.now() - d) / 60000);
+      if (diff < 60) el.textContent = `Updated ${diff}m ago`;
+      else if (diff < 1440) el.textContent = `Updated ${Math.floor(diff/60)}h ago`;
+      else el.textContent = `Updated ${Math.floor(diff/1440)}d ago`;
+    } catch { el.textContent = meta.scan_date || 'Unknown'; }
+  } else {
+    el.textContent = 'Awaiting first scan run';
+    document.getElementById('live-dot').innerHTML =
+      `<span class="w-2 h-2 rounded-full bg-amber-400"></span><span class="text-xs text-amber-400">Pending</span>`;
+  }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+async function init() {
+  const [watchlist, regime, positions, signals, meta] = await Promise.all([
+    fetchJson(DATA.watchlist),
+    fetchJson(DATA.regime),
+    fetchJson(DATA.positions),
+    fetchJson(DATA.signals),
+    fetchJson(DATA.meta),
+  ]);
+
+  renderRegime(regime);
+  renderMeta(meta);
+  renderLastUpdated(meta);
+
+  if (watchlist && Array.isArray(watchlist) && watchlist.length) {
+    allStocks = watchlist;
+    populateSectorFilter(watchlist);
+    renderWatchlist(watchlist);
+  } else {
+    document.getElementById('watchlist-body').innerHTML =
+      `<tr><td colspan="10" class="px-4 py-10 text-center">
+        <div class="text-slate-400 text-sm mb-1">No watchlist data yet</div>
+        <div class="text-slate-600 text-xs">The Sunday 6 PM scan will populate this table automatically</div>
+      </td></tr>`;
+  }
+
+  renderPositions(positions);
+  renderSignals(signals && Array.isArray(signals) ? signals : []);
+
+  // Auto-refresh every 5 minutes
+  setTimeout(init, 5 * 60 * 1000);
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

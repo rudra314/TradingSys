@@ -1,0 +1,7 @@
+{
+  "state": 1,
+  "label": "Awaiting first scan",
+  "size_multiplier": 1.0,
+  "max_positions": 10,
+  "description": "Run the Weekly Scan workflow to populate live data."
+}
