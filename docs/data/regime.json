@@ -1,7 +1,7 @@
 {
-  "state": 1,
-  "label": "Awaiting first scan",
-  "size_multiplier": 1.0,
-  "max_positions": 10,
-  "description": "Run the Weekly Scan workflow to populate live data."
+  "state": 3,
+  "label": "Defensive",
+  "size_multiplier": 0.4,
+  "max_positions": 4,
+  "description": "Price between EMAs or EMA50 below EMA200 or elevated VIX. Minimum exposure, existing winners only."
 }
