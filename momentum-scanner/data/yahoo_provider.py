@@ -57,34 +57,32 @@ def _save_cache(symbol: str, df: pd.DataFrame) -> None:
 def _fetch_with_retry(ticker_symbol: str, period_days: int) -> pd.DataFrame | None:
     """
     Download OHLCV from Yahoo Finance with 3-attempt exponential backoff.
-
-    Args:
-        ticker_symbol: Yahoo Finance ticker (e.g. 'RELIANCE.NS').
-        period_days: Number of calendar days of history.
-
-    Returns:
-        Cleaned DataFrame or None on total failure.
+    Uses Ticker.history() which is stable across all modern yfinance versions.
     """
     delays = [2, 4, 8]
     for attempt, delay in enumerate(delays, 1):
         try:
-            raw = yf.download(
-                ticker_symbol,
-                period=f"{period_days}d",
-                auto_adjust=True,
-                progress=False,
-                threads=False,
-            )
+            ticker = yf.Ticker(ticker_symbol)
+            raw = ticker.history(period=f"{period_days}d", auto_adjust=True, actions=False)
+
             if raw is None or raw.empty:
                 raise ValueError("Empty response")
 
-            # Flatten MultiIndex columns that yfinance sometimes returns
-            if isinstance(raw.columns, pd.MultiIndex):
-                raw.columns = raw.columns.get_level_values(0)
+            # Normalize column names to lowercase
+            raw.columns = [c.lower() for c in raw.columns]
 
-            df = raw[["Open", "High", "Low", "Close", "Volume"]].copy()
-            df.columns = ["open", "high", "low", "close", "volume"]
+            # Keep only OHLCV, drop dividends/stock splits if present
+            for col in ["dividends", "stock splits", "capital gains"]:
+                if col in raw.columns:
+                    raw = raw.drop(columns=[col])
+
+            df = raw[["open", "high", "low", "close", "volume"]].copy()
+
+            # Strip timezone from index so parquet round-trips cleanly
             df.index = pd.to_datetime(df.index)
+            if df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
+
             df.sort_index(inplace=True)
             df.dropna(inplace=True)
             return df

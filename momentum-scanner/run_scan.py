@@ -55,6 +55,15 @@ def _save(data, path: Path) -> None:
         json.dump(data, f, indent=2, default=str)
 
 
+_REGIME_FETCH_FAILED = {
+    "state": 0,
+    "label": "Data Unavailable",
+    "size_multiplier": 0.0,
+    "max_positions": 0,
+    "description": "Could not fetch market data. Check Actions logs for yfinance errors.",
+}
+
+
 # ── Export to docs/data/ ──────────────────────────────────────────────────────
 def export_to_docs(regime: dict = None, stats: dict = None) -> None:
     """
@@ -71,9 +80,8 @@ def export_to_docs(regime: dict = None, stats: dict = None) -> None:
     pos = _load(DATA_DIR / "open_positions.json")
     _save(pos or {}, DOCS_DIR / "open_positions.json")
 
-    # regime.json — regime card
-    if regime:
-        _save(regime, DOCS_DIR / "regime.json")
+    # regime.json — always write so dashboard doesn't show stale placeholder
+    _save(regime or _REGIME_FETCH_FAILED, DOCS_DIR / "regime.json")
 
     # signals.json — recent alerts (parsed from signals.log)
     signals = _parse_signals_log(LOGS_DIR / "signals.log")
@@ -136,7 +144,8 @@ def run_weekly() -> None:
         provider = get_provider()
         nifty_df = provider.get_benchmark(400)
         regime = get_market_regime(nifty_df)
-    except Exception:
+    except Exception as exc:
+        log.error("Failed to fetch benchmark/regime for dashboard export: %s", exc, exc_info=True)
         regime = None
 
     wl = _load(DATA_DIR / "watchlist.json") or []
@@ -187,7 +196,8 @@ def run_morning() -> None:
         provider = get_provider()
         nifty_df = provider.get_benchmark(400)
         regime = get_market_regime(nifty_df)
-    except Exception:
+    except Exception as exc:
+        log.error("Failed to fetch benchmark/regime: %s", exc, exc_info=True)
         regime = None
 
     meta = _load(DOCS_DIR / "scan_meta.json") or {}
@@ -207,7 +217,8 @@ def run_afternoon() -> None:
         provider = get_provider()
         nifty_df = provider.get_benchmark(400)
         regime = get_market_regime(nifty_df)
-    except Exception:
+    except Exception as exc:
+        log.error("Failed to fetch benchmark/regime: %s", exc, exc_info=True)
         regime = None
 
     meta = _load(DOCS_DIR / "scan_meta.json") or {}
