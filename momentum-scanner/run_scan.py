@@ -16,12 +16,10 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Ensure momentum-scanner/ is on path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
-REPO_ROOT   = Path(__file__).parent.parent          # TradingSys/
-SCANNER_DIR = Path(__file__).parent                 # momentum-scanner/
+REPO_ROOT   = Path(__file__).parent.parent
+SCANNER_DIR = Path(__file__).parent
 DATA_DIR    = SCANNER_DIR / "data"
 DOCS_DIR    = REPO_ROOT / "docs" / "data"
 LOGS_DIR    = SCANNER_DIR / "logs"
@@ -41,7 +39,6 @@ logging.basicConfig(
 log = logging.getLogger("run_scan")
 
 
-# ── JSON helpers ──────────────────────────────────────────────────────────────
 def _load(path: Path):
     if path.exists():
         with open(path) as f:
@@ -64,44 +61,24 @@ _REGIME_FETCH_FAILED = {
 }
 
 
-# ── Export to docs/data/ ──────────────────────────────────────────────────────
 def export_to_docs(regime: dict = None, stats: dict = None) -> None:
-    """
-    Copy / transform scanner output files into docs/data/ for GitHub Pages.
-    Called after every scan type. Missing files are skipped gracefully.
-    """
-    # watchlist.json — used directly by the dashboard table
     wl = _load(DATA_DIR / "watchlist.json")
     if wl:
         _save(wl, DOCS_DIR / "watchlist.json")
         log.info("docs/data/watchlist.json — %d stocks", len(wl))
-
-    # open_positions.json — positions table
     pos = _load(DATA_DIR / "open_positions.json")
     _save(pos or {}, DOCS_DIR / "open_positions.json")
-
-    # regime.json — always write so dashboard doesn't show stale placeholder
     _save(regime or _REGIME_FETCH_FAILED, DOCS_DIR / "regime.json")
-
-    # signals.json — recent alerts (parsed from signals.log)
     signals = _parse_signals_log(LOGS_DIR / "signals.log")
     _save(signals, DOCS_DIR / "signals.json")
-
-    # scan_meta.json — stats bar + last updated
     if stats:
         stats["scan_timestamp"] = datetime.now(timezone.utc).isoformat()
         stats["scan_date"] = datetime.now().strftime("%Y-%m-%d")
         _save(stats, DOCS_DIR / "scan_meta.json")
-
     log.info("docs/data/ export complete")
 
 
 def _parse_signals_log(log_path: Path) -> list[dict]:
-    """
-    Parse logs/signals.log into a list of dicts for the dashboard.
-    Format: {timestamp} | {alert_type} | {symbol} | {entry} | {sl} | {target1} | {grade} | {score} | {rs55_pct}
-    Returns last 50 entries, newest first.
-    """
     if not log_path.exists():
         return []
     entries = []
@@ -116,30 +93,31 @@ def _parse_signals_log(log_path: Path) -> list[dict]:
                     entry: dict = {"timestamp": parts[0], "alert_type": parts[1], "symbol": parts[2]}
                     if len(parts) >= 9:
                         try:
-                            entry["entry"]   = float(parts[3])
-                            entry["sl"]      = float(parts[4])
-                            entry["target1"] = float(parts[5])
-                            entry["grade"]   = parts[6]
-                            entry["score"]   = int(float(parts[7]))
-                            entry["rs55_pct"]= float(parts[8])
+                            entry["entry"]    = float(parts[3])
+                            entry["sl"]       = float(parts[4])
+                            entry["target1"]  = float(parts[5])
+                            entry["grade"]    = parts[6]
+                            entry["score"]    = int(float(parts[7]))
+                            entry["rs55_pct"] = float(parts[8])
                         except (ValueError, IndexError):
                             pass
                     entries.append(entry)
     except Exception as exc:
         log.warning("Could not parse signals.log: %s", exc)
-    return list(reversed(entries))[-50:]  # newest first, cap at 50
+    return list(reversed(entries))[-50:]
 
 
-# ── Scan runners ──────────────────────────────────────────────────────────────
 def run_weekly() -> None:
     log.info("=== WEEKLY SCAN (GitHub Actions) ===")
     from main import run_weekly_scan
     from engine.regime import get_market_regime
     from data.data_provider import get_provider
 
-    run_weekly_scan()
+    try:
+        run_weekly_scan()
+    except Exception as exc:
+        log.error("run_weekly_scan() raised an unhandled exception: %s", exc, exc_info=True)
 
-    # Collect stats for dashboard
     try:
         provider = get_provider()
         nifty_df = provider.get_benchmark(400)
@@ -150,14 +128,12 @@ def run_weekly() -> None:
 
     wl = _load(DATA_DIR / "watchlist.json") or []
     stats = {
-        "total_scanned": 0,      # updated inside run_weekly_scan via log
+        "total_scanned": 0,
         "total_eligible": 0,
         "watchlist_count": len(wl),
         "blackout_count": 0,
         "sector_leaders": [],
     }
-
-    # Try to read counts from the last log lines
     try:
         with open(LOGS_DIR / "scanner.log") as f:
             for line in reversed(f.readlines()):
@@ -173,11 +149,9 @@ def run_weekly() -> None:
                     break
     except Exception:
         pass
-
-    # Top sectors from watchlist
     if wl:
         from collections import Counter
-        sector_counts = Counter(s.get("sector","Other") for s in wl if s.get("sector") not in (None,"Other",""))
+        sector_counts = Counter(s.get("sector", "Other") for s in wl if s.get("sector") not in (None, "Other", ""))
         stats["sector_leaders"] = [f"{s} ({c})" for s, c in sector_counts.most_common(3)]
 
     export_to_docs(regime=regime, stats=stats)
@@ -190,7 +164,10 @@ def run_morning() -> None:
     from engine.regime import get_market_regime
     from data.data_provider import get_provider
 
-    run_morning_check()
+    try:
+        run_morning_check()
+    except Exception as exc:
+        log.error("run_morning_check() raised an unhandled exception: %s", exc, exc_info=True)
 
     try:
         provider = get_provider()
@@ -211,7 +188,10 @@ def run_afternoon() -> None:
     from engine.regime import get_market_regime
     from data.data_provider import get_provider
 
-    run_afternoon_check()
+    try:
+        run_afternoon_check()
+    except Exception as exc:
+        log.error("run_afternoon_check() raised an unhandled exception: %s", exc, exc_info=True)
 
     try:
         provider = get_provider()
@@ -226,7 +206,6 @@ def run_afternoon() -> None:
     log.info("=== AFTERNOON CHECK COMPLETE ===")
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     mode = sys.argv[1].lower() if len(sys.argv) > 1 else "weekly"
     dispatch = {"weekly": run_weekly, "morning": run_morning, "afternoon": run_afternoon}
