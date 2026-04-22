@@ -38,6 +38,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r momentum-scanner/requirements.txt
 
+      - name: Verify curl_cffi (Yahoo Finance TLS bypass)
+        run: |
+          python -c "import curl_cffi; print('curl_cffi version:', curl_cffi.__version__)"
+          python -c "import yfinance as yf; t = yf.Ticker('RELIANCE.NS'); h = t.history(period='5d'); print('Test fetch rows:', len(h))"
+
       - name: Run afternoon exit / trail check
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
@@ -45,6 +50,12 @@ jobs:
         run: |
           cd momentum-scanner
           python run_scan.py afternoon
+
+      - name: Show scanner log (always)
+        if: always()
+        run: |
+          echo "=== Last 80 lines of scanner.log ==="
+          tail -80 momentum-scanner/logs/scanner.log 2>/dev/null || echo "(no log file)"
 
       - name: Commit updated positions and signals
         run: |
