@@ -1,0 +1,65 @@
+name: "🧪 Test Data Fetch — verify Yahoo Finance works"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-fetch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install "yfinance>=0.2.54,<1.0" "curl_cffi>=0.6.2" pandas pyarrow
+
+      - name: Print library versions
+        run: |
+          python -c "import yfinance; print('yfinance:', yfinance.__version__)"
+          python -c "import curl_cffi; print('curl_cffi:', curl_cffi.__version__)"
+
+      - name: Fetch 3 NSE stocks and verify
+        run: |
+          python - <<'EOF'
+          import sys
+          import yfinance as yf
+          import pandas as pd
+
+          SYMBOLS = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS"]
+          START   = "2024-01-01"
+          MIN_ROWS = 50
+
+          failed = []
+          for sym in SYMBOLS:
+              try:
+                  df = yf.Ticker(sym).history(start=START, auto_adjust=True, actions=False)
+                  if df is None or df.empty:
+                      print(f"FAIL  {sym}: returned empty DataFrame")
+                      failed.append(sym)
+                  elif len(df) < MIN_ROWS:
+                      print(f"FAIL  {sym}: only {len(df)} rows (need {MIN_ROWS}+)")
+                      failed.append(sym)
+                  else:
+                      last = df["Close"].iloc[-1]
+                      date = df.index[-1].date()
+                      print(f"OK    {sym}: {len(df)} rows | latest close Rs {last:.2f} on {date}")
+              except Exception as e:
+                  print(f"FAIL  {sym}: {e}")
+                  failed.append(sym)
+
+          print()
+          if failed:
+              print(f"FAILED: {failed}")
+              sys.exit(1)
+          else:
+              print("All 3 symbols fetched successfully — data provider is working.")
+          EOF
