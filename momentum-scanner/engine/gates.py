@@ -219,8 +219,9 @@ def compute_sector_rs55_map(provider, nifty_df: pd.DataFrame) -> dict[str, float
 
         except Exception as exc:
             log.warning(
-                "Sector %s index fetch failed (%s), fallback: passing 0.0", sector_name, exc
+                "Sector %s index fetch failed (%s) — sector omitted from map, Gate 4 will pass",
+                sector_name, exc,
             )
-            sector_rs55[sector_name] = 0.0
+            # Intentionally NOT added to map: Gate 4 passes missing sectors (line ~105)
 
     return sector_rs55

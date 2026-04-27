@@ -174,7 +174,9 @@ class YahooDataProvider(DataProvider):
         cached = _load_cache(symbol)
         if cached is not None:
             return cached
-        df = _fetch_one(f"{symbol}.NS", period_days)
+        # Index symbols (^NSEBANK, ^CNXIT …) must not get the .NS suffix
+        ticker = symbol if symbol.startswith("^") else f"{symbol}.NS"
+        df = _fetch_one(ticker, period_days)
         if df is None:
             raise RuntimeError(f"Could not fetch data for {symbol}")
         _save_cache(symbol, df)
