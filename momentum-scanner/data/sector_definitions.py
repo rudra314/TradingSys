@@ -188,5 +188,7 @@ SECTOR_MAP: dict[str, str] = {
     "VOLTAS": 'Other',      "VSSL": 'Other',      "WALCHANNAG": 'Other',      "WATERBASE": 'Other',
     "WHIRLPOOL": 'Other',      "WONDERLA": 'Other',      "ZEEL": 'Other',      "ZODIACLOTH": 'Other',
     "ZOMATO": 'Other',
+    "KIRIINDUS": 'Other',   # Kiri Industries — specialty dyes & chemicals
+    "STERTOOLS": 'Auto',    # Sterling Tools — automotive fasteners
 
 }
