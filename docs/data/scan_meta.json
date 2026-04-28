@@ -1,9 +1,13 @@
 {
   "total_scanned": 475,
-  "total_eligible": 50,
+  "total_eligible": 192,
   "watchlist_count": 20,
   "blackout_count": 0,
-  "sector_leaders": [],
-  "scan_timestamp": "2026-04-27T15:07:23.738183+00:00",
-  "scan_date": "2026-04-27"
+  "sector_leaders": [
+    "Metals (6)",
+    "Pharma (5)",
+    "Banking (3)"
+  ],
+  "scan_timestamp": "2026-04-28T01:36:38.790074+00:00",
+  "scan_date": "2026-04-28"
 }
